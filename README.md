@@ -1,2 +1,2 @@
 # TikTok-Bulk-Downloader
-TikTok koleksiyonları için PyQt6 tabanlı toplu video indirme aracı.
+Batch video downloader for TikTok collections based on PyQt6. /TikTok koleksiyonları için PyQt6 tabanlı toplu video indirme aracı.
