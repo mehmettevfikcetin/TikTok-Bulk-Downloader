@@ -67,7 +67,7 @@ pyinstaller --onefile --windowed --icon="icon.ico" --add-data="icon.ico;." --add
 📜 License
 This project is licensed under the MIT License.
 
-## 🇬🇧 Türkçe Versiyon
+##🇹🇷 Türkçe Versiyon
 Bu araç, TikTok'taki "Kaydedilenler" (Collections) altında bulunan video koleksiyonlarını toplu olarak indirmek için geliştirilmiş bir Windows (x64) masaüstü uygulamasıdır.
 
 🚀 İndir ve Kullan (Kurulumsuz)
