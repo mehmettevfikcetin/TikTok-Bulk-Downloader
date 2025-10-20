@@ -121,7 +121,7 @@ Bu projeyi kaynaktan çalıştırmak veya geliştirmek isterseniz:
 1. Depoyu Klonlayın
 
 git clone [https://github.com/mehmettevfikcetin/TikTok-Bulk-Downloader.git](https://github.com/mehmettevfikcetin/TikTok-Bulk-Downloader.git)
-cd DEPO_ADIN
+cd TikTok-Bulk-Downloader
 2. Gerekli Kütüphaneleri Kurun
 
 
