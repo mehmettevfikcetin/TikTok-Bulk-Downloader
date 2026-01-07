@@ -1,3 +1,4 @@
+EN
 🎬 TikTok Bulk Downloader (v1.5)
 Advanced bulk video downloader for TikTok Collections and Saved Lists. Built with Python, PyQt6, and yt-dlp.
 
