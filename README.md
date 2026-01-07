@@ -76,6 +76,9 @@ This tool is for educational purposes and personal archiving only. Please respec
 🇹🇷 TikTok Toplu Video İndirici (v7.6)
 TikTok Koleksiyonları ve Kaydedilenler listesi için gelişmiş toplu video indirme aracı. Python, PyQt6 ve yt-dlp ile geliştirilmiştir.
 
+TR
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 Bu uygulama, TikTok koleksiyonlarınızı yerel olarak yedeklemenizi sağlar. Yaygın engellemeleri aşmak için benzersiz bir "Hibrit Mod" ve var olan dosyaları anında geçen "Hızlı Kontrol" sistemine sahiptir.
 
 🔥 Temel Özellikler
