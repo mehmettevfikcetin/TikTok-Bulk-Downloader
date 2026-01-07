@@ -1,0 +1,8 @@
+dist/ 
+build/ 
+*.spec 
+*.exe 
+__pycache__/ 
+ffmpeg.exe 
+ffprobe.exe 
+yt-dlp.exe 
