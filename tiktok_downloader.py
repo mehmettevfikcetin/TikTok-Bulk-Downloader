@@ -1078,7 +1078,7 @@ class App(QWidget):
 
     # --- YARDIMCI STİL FONKSİYONLARI ---
     def get_app_version(self):
-        return "1.8.5" # Versiyonu buradan yönetelim
+        return "1.8.6" # Versiyonu buradan yönetelim
 
     def get_frame_style(self):
         S = StyleConstants
@@ -1316,7 +1316,7 @@ class App(QWidget):
                 QMessageBox.warning(self, "⚠️ Hata", f"Güncelleme kontrolü yapılamadı:\n{e}")
 
     def perform_auto_update(self, url):
-        """Yeni sürümü indirir ve eskiyle değiştirir (Geliştirilmiş v2 - Tam Yol Düzeltmeli)."""
+        """Yeni sürümü indirir ve eskiyle değiştirir (v3 - PowerShell tabanlı, tam sağlam)."""
         try:
             self.download_button.setText("📥 Güncelleme İndiriliyor...")
             self.download_button.setEnabled(False)
@@ -1333,139 +1333,193 @@ class App(QWidget):
             # Eğer Python script ile çalışıyorsa güncelleme yapma
             if not current_exe.endswith(".exe"):
                 QMessageBox.warning(self, "⚠️ Uyarı", "Bu özellik sadece .exe formatında çalışır.")
-                self.download_button.setText("İndirmeyi Başlat")
-                self.download_button.setEnabled(True)
+                self._reset_update_buttons()
                 return
 
             # EXE'nin bulunduğu dizin (TÜM dosya işlemleri bu dizinde yapılacak)
             exe_dir = os.path.dirname(current_exe)
-            exe_name = os.path.basename(current_exe)
             
-            # Yeni dosya ve BAT için MUTLAK yollar (exe ile aynı dizinde)
-            new_exe_path = os.path.join(exe_dir, "new_update.exe")
-            bat_path = os.path.join(exe_dir, "updater.bat")
+            # Yeni dosya için MUTLAK yol (exe ile aynı dizinde)
+            new_exe_path = os.path.join(exe_dir, "tiktok_update_new.exe")
             
             print(f"📦 Mevcut exe: {current_exe}")
             print(f"📁 Exe dizini: {exe_dir}")
+            print(f"📥 Yeni exe hedefi: {new_exe_path}")
             
             # 1. Yeni sürümü exe'nin dizinine indir (MUTLAK YOL ile)
             print("📥 Yeni sürüm indiriliyor...")
             response = requests.get(url, stream=True, timeout=300)
+            
+            if response.status_code != 200:
+                raise Exception(f"İndirme hatası: HTTP {response.status_code}")
+            
             total_size = int(response.headers.get('content-length', 0))
             downloaded = 0
             
             with open(new_exe_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
+                for chunk in response.iter_content(chunk_size=65536):
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
                         if total_size:
                             percent = (downloaded / total_size) * 100
-                            self.download_button.setText(f"📥 İndiriliyor: {percent:.1f}%")
+                            self.download_button.setText(f"📥 İndiriliyor: {percent:.0f}%")
                             QCoreApplication.processEvents()
             
-            # İndirilen dosya boyut kontrolü
-            if not os.path.exists(new_exe_path) or os.path.getsize(new_exe_path) < 1000:
-                raise Exception("İndirilen dosya geçersiz veya boş!")
+            # İndirilen dosya doğrulama
+            if not os.path.exists(new_exe_path):
+                raise Exception(f"İndirilen dosya bulunamadı: {new_exe_path}")
             
-            print(f"✅ İndirme tamamlandı: {new_exe_path} ({os.path.getsize(new_exe_path)} bytes)")
+            new_size = os.path.getsize(new_exe_path)
+            if new_size < 50000:  # 50KB'dan küçükse bozuk
+                os.remove(new_exe_path)
+                raise Exception(f"İndirilen dosya çok küçük ({new_size} bytes), bozuk olabilir!")
+            
+            print(f"✅ İndirme tamamlandı: {new_exe_path} ({new_size:,} bytes)")
             self.download_button.setText("🔧 Güncelleme hazırlanıyor...")
             QCoreApplication.processEvents()
             
-            # 2. Güncelleyici BAT dosyası oluştur
-            # NOT: BAT dosyasında Türkçe karakter sorunu olmaması için
-            # tüm yolları kısa değişkenlere atayıp tırnak içinde kullanıyoruz.
-            # chcp 65001 ile UTF-8 desteği ekliyoruz.
+            # 2. PowerShell scripti oluştur (BAT yerine - Unicode ve boşluklu yolları doğal destekler)
             pid = os.getpid()
+            ps_script_path = os.path.join(exe_dir, "updater.ps1")
             
-            bat_script = f"""@echo off
-chcp 65001 > NUL 2>&1
-setlocal enabledelayedexpansion
-title TikTok Indirici - Guncelleniyor...
-color 0A
-cls
-echo.
-echo ========================================
-echo   TikTok Indirici Guncelleniyor...
-echo ========================================
-echo.
+            # PowerShell script - tüm yollar tek tırnak içinde, escape gerekmez
+            ps_script = f"""# TikTok Indirici - Otomatik Guncelleyici
+$ErrorActionPreference = 'Stop'
+$oldExe = '{current_exe}'
+$newExe = '{new_exe_path}'
+$pid = {pid}
 
-set "EXE_DIR={exe_dir}"
-set "OLD_EXE={current_exe}"
-set "NEW_EXE={new_exe_path}"
-set "FINAL_EXE={current_exe}"
+Write-Host '========================================' -ForegroundColor Green
+Write-Host '  TikTok Indirici Guncelleniyor...' -ForegroundColor Green
+Write-Host '========================================' -ForegroundColor Green
+Write-Host ''
 
-REM Exe dizinine git
-cd /d "%EXE_DIR%"
+# 1. Uygulamanin kapanmasini bekle (max 30 saniye)
+Write-Host 'Uygulama kapatiliyor...' -ForegroundColor Yellow
+$waited = 0
+while ($waited -lt 30) {{
+    try {{
+        $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+        if (-not $proc) {{ break }}
+        Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+    }} catch {{ }}
+    Start-Sleep -Seconds 1
+    $waited++
+}}
+Start-Sleep -Seconds 2
 
-REM 3 saniye bekle (uygulama kapansin)
-echo Uygulama kapatiliyor...
-timeout /t 3 /nobreak > NUL 2>&1
+# 2. Eski exe'yi sil (max 10 deneme)
+Write-Host 'Eski surum kaldiriliyor...' -ForegroundColor Yellow
+$retry = 0
+while ((Test-Path $oldExe) -and ($retry -lt 10)) {{
+    try {{
+        Remove-Item -Path $oldExe -Force -ErrorAction Stop
+        Write-Host 'Eski surum silindi.' -ForegroundColor Green
+    }} catch {{
+        Write-Host "Deneme $($retry+1)/10 - Dosya henuz kilitli, bekleniyor..." -ForegroundColor DarkYellow
+        Start-Sleep -Seconds 2
+    }}
+    $retry++
+}}
 
-REM Eski prosesi kapat (PID ile)
-taskkill /F /PID {pid} > NUL 2>&1
-timeout /t 2 /nobreak > NUL 2>&1
+if (Test-Path $oldExe) {{
+    Write-Host 'HATA: Eski dosya silinemedi!' -ForegroundColor Red
+    Write-Host 'Lutfen uygulamayi manuel kapatin ve tekrar deneyin.' -ForegroundColor Red
+    Read-Host 'Kapatmak icin Enter tuslayın'
+    exit 1
+}}
 
-REM Eski exe'yi sil (5 deneme, her biri 2 saniye arayla)
-echo Eski surum siliniyor...
-set RETRY=0
-:DELETE_RETRY
-if not exist "%OLD_EXE%" goto DELETE_DONE
-del /F /Q "%OLD_EXE%" > NUL 2>&1
-timeout /t 2 /nobreak > NUL 2>&1
-set /a RETRY+=1
-if %RETRY% LSS 5 goto DELETE_RETRY
-echo HATA: Eski dosya silinemedi! Dosya kullanımda olabilir.
-pause
-goto CLEANUP
+# 3. Yeni exe'yi eski isimle tasi
+Write-Host 'Yeni surum hazirlaniyor...' -ForegroundColor Yellow
+try {{
+    Move-Item -Path $newExe -Destination $oldExe -Force
+    Write-Host 'Dosya tasindi.' -ForegroundColor Green
+}} catch {{
+    Write-Host "HATA: Dosya tasinamadi: $_" -ForegroundColor Red
+    # Fallback: Copy dene
+    try {{
+        Copy-Item -Path $newExe -Destination $oldExe -Force
+        Remove-Item -Path $newExe -Force -ErrorAction SilentlyContinue
+        Write-Host 'Dosya kopyalandi (fallback).' -ForegroundColor Green
+    }} catch {{
+        Write-Host "KRITIK HATA: Dosya kopyalanamadi: $_" -ForegroundColor Red
+        Read-Host 'Kapatmak icin Enter tuslayın'
+        exit 1
+    }}
+}}
 
-:DELETE_DONE
-echo Eski surum silindi.
+# 4. Dogrulama
+if (Test-Path $oldExe) {{
+    Write-Host '' -ForegroundColor Green
+    Write-Host '========================================' -ForegroundColor Green
+    Write-Host '  Guncelleme Basarili!' -ForegroundColor Green
+    Write-Host '========================================' -ForegroundColor Green
+    Write-Host 'Uygulama baslatiliyor...' -ForegroundColor Cyan
+    Start-Sleep -Seconds 1
+    Start-Process -FilePath $oldExe
+}} else {{
+    Write-Host 'HATA: Guncelleme dogrulanamadi!' -ForegroundColor Red
+    Read-Host 'Kapatmak icin Enter tuslayın'
+    exit 1
+}}
 
-REM Yeni dosyayi eski isimle tasi (move komutu - ren yerine, tam yol destekler)
-echo Yeni surum hazirlaniyor...
-move /Y "%NEW_EXE%" "%FINAL_EXE%" > NUL 2>&1
-
-if not exist "%FINAL_EXE%" (
-    echo HATA: Yeni dosya tasinamadi!
-    pause
-    goto CLEANUP
-)
-
-echo Guncelleme basarili! Uygulama baslatiliyor...
-timeout /t 1 /nobreak > NUL 2>&1
-
-REM Yeni versiyonu baslat
-start "" "%FINAL_EXE%"
-
-:CLEANUP
-REM 3 saniye bekle, sonra BAT dosyasini sil
-timeout /t 3 /nobreak > NUL 2>&1
-del /F /Q "%~f0" > NUL 2>&1
+# 5. Temizlik - kendi scriptini sil
+Start-Sleep -Seconds 3
+Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 """
             
-            # BAT dosyasını exe'nin dizinine yaz (ANSI encoding - BAT uyumluluğu için)
-            with open(bat_path, "w", encoding='cp1254') as f:
-                f.write(bat_script)
+            # Script dosyasını yaz (UTF-8 BOM ile - PowerShell bunu doğru okur)
+            with open(ps_script_path, "w", encoding='utf-8-sig') as f:
+                f.write(ps_script)
             
-            print(f"🚀 Güncelleyici başlatılıyor: {bat_path}")
+            print(f"🚀 Güncelleyici başlatılıyor: {ps_script_path}")
             self.download_button.setText("🚀 Güncelleme Başlatılıyor...")
             QCoreApplication.processEvents()
             
-            # BAT dosyasını MUTLAK YOL ile başlat
-            subprocess.Popen(f'cmd /c "{bat_path}"', shell=True, cwd=exe_dir)
+            # PowerShell scripti AYRI BİR PENCEREDE başlat
+            # -ExecutionPolicy Bypass: Script imza kısıtlamasını aş
+            # -File: Script dosyasını çalıştır
+            subprocess.Popen(
+                [
+                    'powershell.exe',
+                    '-ExecutionPolicy', 'Bypass',
+                    '-NoProfile',
+                    '-File', ps_script_path
+                ],
+                cwd=exe_dir,
+                creationflags=subprocess.CREATE_NEW_CONSOLE
+            )
             
-            # ⚠️ KRİTİK: Hemen çıkış yap ki dosyalar kilitsiz kalsin
+            # Hemen çıkış yap ki dosya kilidi kalksın
             print("⏹️ Uygulama kapanıyor...")
-            sys.exit(0)
+            os._exit(0)  # os._exit kullan - PyInstaller cleanup'ı atla, anında çık
             
         except Exception as e:
-            print(f"❌ Hata: {e}")
-            QMessageBox.critical(self, "❌ Güncelleme Hatası", f"Güncelleme yapılamadı:\n\n{e}")
-            self.download_button.setText("İndirmeyi Başlat")
-            self.download_button.setEnabled(True)
-            if hasattr(self, 'fetch_links_button'):
-                self.fetch_links_button.setEnabled(True)
+            print(f"❌ Güncelleme hatası: {e}")
+            # Hata durumunda fallback: tarayıcıda indirme sayfasını aç
+            error_msg = f"Otomatik güncelleme yapılamadı:\n{e}\n\nTarayıcıda indirme sayfası açılsın mı?"
+            reply = QMessageBox.question(
+                self, "Güncelleme Hatası", error_msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                QDesktopServices.openUrl(QUrl("https://github.com/mehmettevfikcetin/TikTok-Bulk-Downloader/releases/latest"))
+            
+            # İndirilen geçici dosyayı temizle
+            try:
+                if 'new_exe_path' in locals() and os.path.exists(new_exe_path):
+                    os.remove(new_exe_path)
+            except: pass
+            
+            self._reset_update_buttons()
+    
+    def _reset_update_buttons(self):
+        """Güncelleme sonrası butonları eski haline döndürür."""
+        self.download_button.setText("⚡ İndirmeyi Başlat")
+        self.download_button.setEnabled(True)
+        if hasattr(self, 'fetch_links_button'):
+            self.fetch_links_button.setEnabled(True)
     # --- GÜNCELLEME FONKSİYONLARI BİTİŞ ---
 
     # --- DEĞİŞİKLİK 3: Yeni Fonksiyon Eklendi ---
