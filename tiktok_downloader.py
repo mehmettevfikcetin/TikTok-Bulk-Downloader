@@ -1316,7 +1316,7 @@ class App(QWidget):
                 QMessageBox.warning(self, "⚠️ Hata", f"Güncelleme kontrolü yapılamadı:\n{e}")
 
     def perform_auto_update(self, url):
-        """Yeni sürümü indirir ve eskiyle değiştirir (Geliştirilmiş)."""
+        """Yeni sürümü indirir ve eskiyle değiştirir (Geliştirilmiş v2 - Tam Yol Düzeltmeli)."""
         try:
             self.download_button.setText("📥 Güncelleme İndiriliyor...")
             self.download_button.setEnabled(False)
@@ -1324,9 +1324,9 @@ class App(QWidget):
                 self.fetch_links_button.setEnabled(False)
             QCoreApplication.processEvents()
             
-            # Mevcut executable yolu
+            # Mevcut executable yolu (MUTLAK yol)
             if getattr(sys, 'frozen', False):
-                current_exe = sys.executable
+                current_exe = os.path.abspath(sys.executable)
             else:
                 current_exe = os.path.abspath(sys.argv[0])
             
@@ -1337,16 +1337,24 @@ class App(QWidget):
                 self.download_button.setEnabled(True)
                 return
 
-            print(f"📦 Mevcut exe: {current_exe}")
+            # EXE'nin bulunduğu dizin (TÜM dosya işlemleri bu dizinde yapılacak)
+            exe_dir = os.path.dirname(current_exe)
+            exe_name = os.path.basename(current_exe)
             
-            # 1. Yeni sürümü indir
+            # Yeni dosya ve BAT için MUTLAK yollar (exe ile aynı dizinde)
+            new_exe_path = os.path.join(exe_dir, "new_update.exe")
+            bat_path = os.path.join(exe_dir, "updater.bat")
+            
+            print(f"📦 Mevcut exe: {current_exe}")
+            print(f"📁 Exe dizini: {exe_dir}")
+            
+            # 1. Yeni sürümü exe'nin dizinine indir (MUTLAK YOL ile)
             print("📥 Yeni sürüm indiriliyor...")
             response = requests.get(url, stream=True, timeout=300)
-            new_exe_name = "new_update.exe"
             total_size = int(response.headers.get('content-length', 0))
             downloaded = 0
             
-            with open(new_exe_name, 'wb') as f:
+            with open(new_exe_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
@@ -1356,16 +1364,22 @@ class App(QWidget):
                             self.download_button.setText(f"📥 İndiriliyor: {percent:.1f}%")
                             QCoreApplication.processEvents()
             
-            print("✅ İndirme tamamlandı")
+            # İndirilen dosya boyut kontrolü
+            if not os.path.exists(new_exe_path) or os.path.getsize(new_exe_path) < 1000:
+                raise Exception("İndirilen dosya geçersiz veya boş!")
+            
+            print(f"✅ İndirme tamamlandı: {new_exe_path} ({os.path.getsize(new_exe_path)} bytes)")
             self.download_button.setText("🔧 Güncelleme hazırlanıyor...")
             QCoreApplication.processEvents()
             
-            # 2. Güncelleyici BAT dosyası oluştur (OPTİMİZE)
+            # 2. Güncelleyici BAT dosyası oluştur
+            # NOT: BAT dosyasında Türkçe karakter sorunu olmaması için
+            # tüm yolları kısa değişkenlere atayıp tırnak içinde kullanıyoruz.
+            # chcp 65001 ile UTF-8 desteği ekliyoruz.
             pid = os.getpid()
-            exe_name = os.path.basename(current_exe)
-            exe_dir = os.path.dirname(current_exe)
             
             bat_script = f"""@echo off
+chcp 65001 > NUL 2>&1
 setlocal enabledelayedexpansion
 title TikTok Indirici - Guncelleniyor...
 color 0A
@@ -1376,40 +1390,70 @@ echo   TikTok Indirici Guncelleniyor...
 echo ========================================
 echo.
 
-REM 3 saniye bekle
+set "EXE_DIR={exe_dir}"
+set "OLD_EXE={current_exe}"
+set "NEW_EXE={new_exe_path}"
+set "FINAL_EXE={current_exe}"
+
+REM Exe dizinine git
+cd /d "%EXE_DIR%"
+
+REM 3 saniye bekle (uygulama kapansin)
+echo Uygulama kapatiliyor...
 timeout /t 3 /nobreak > NUL 2>&1
 
-REM Eski prosesi kapat
+REM Eski prosesi kapat (PID ile)
 taskkill /F /PID {pid} > NUL 2>&1
-
-REM Eski dosyayı sil (2 saniye için retry yap)
-del /F /Q "{current_exe}" > NUL 2>&1
-if exist "{current_exe}" (
-    timeout /t 1 /nobreak > NUL 2>&1
-    del /F /Q "{current_exe}" > NUL 2>&1
-)
-
-REM Yeni dosyayı eski adi ile tasi
-ren "{new_exe_name}" "{exe_name}" > NUL 2>&1
-
-REM Yeni versiyonu bassat
-start "" "{current_exe}"
-
-REM Giris icin bekle (dosyalar tamamen yazilsin)
 timeout /t 2 /nobreak > NUL 2>&1
 
-REM Bu BAT dosyasini sil
+REM Eski exe'yi sil (5 deneme, her biri 2 saniye arayla)
+echo Eski surum siliniyor...
+set RETRY=0
+:DELETE_RETRY
+if not exist "%OLD_EXE%" goto DELETE_DONE
+del /F /Q "%OLD_EXE%" > NUL 2>&1
+timeout /t 2 /nobreak > NUL 2>&1
+set /a RETRY+=1
+if %RETRY% LSS 5 goto DELETE_RETRY
+echo HATA: Eski dosya silinemedi! Dosya kullanımda olabilir.
+pause
+goto CLEANUP
+
+:DELETE_DONE
+echo Eski surum silindi.
+
+REM Yeni dosyayi eski isimle tasi (move komutu - ren yerine, tam yol destekler)
+echo Yeni surum hazirlaniyor...
+move /Y "%NEW_EXE%" "%FINAL_EXE%" > NUL 2>&1
+
+if not exist "%FINAL_EXE%" (
+    echo HATA: Yeni dosya tasinamadi!
+    pause
+    goto CLEANUP
+)
+
+echo Guncelleme basarili! Uygulama baslatiliyor...
+timeout /t 1 /nobreak > NUL 2>&1
+
+REM Yeni versiyonu baslat
+start "" "%FINAL_EXE%"
+
+:CLEANUP
+REM 3 saniye bekle, sonra BAT dosyasini sil
+timeout /t 3 /nobreak > NUL 2>&1
 del /F /Q "%~f0" > NUL 2>&1
 """
             
-            with open("updater.bat", "w", encoding='utf-8') as f:
+            # BAT dosyasını exe'nin dizinine yaz (ANSI encoding - BAT uyumluluğu için)
+            with open(bat_path, "w", encoding='cp1254') as f:
                 f.write(bat_script)
             
-            print("🚀 Güncelleyici başlatılıyor...")
+            print(f"🚀 Güncelleyici başlatılıyor: {bat_path}")
             self.download_button.setText("🚀 Güncelleme Başlatılıyor...")
             QCoreApplication.processEvents()
             
-            subprocess.Popen("updater.bat", shell=True)
+            # BAT dosyasını MUTLAK YOL ile başlat
+            subprocess.Popen(f'cmd /c "{bat_path}"', shell=True, cwd=exe_dir)
             
             # ⚠️ KRİTİK: Hemen çıkış yap ki dosyalar kilitsiz kalsin
             print("⏹️ Uygulama kapanıyor...")
