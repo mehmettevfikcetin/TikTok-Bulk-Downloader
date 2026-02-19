@@ -1078,7 +1078,7 @@ class App(QWidget):
 
     # --- YARDIMCI STİL FONKSİYONLARI ---
     def get_app_version(self):
-        return "1.8.6" # Versiyonu buradan yönetelim
+        return "1.8.7" # Versiyonu buradan yönetelim
 
     def get_frame_style(self):
         S = StyleConstants
@@ -1218,53 +1218,173 @@ class App(QWidget):
 
     # --- YENİ FONKSİYON: Yardım Penceresi ---
     def show_help_dialog(self):
-        help_text = f"""
-        <html><body style='font-family: {StyleConstants.FONT_FAMILY}, Arial; font-size: 15px; color: {StyleConstants.TEXT_PRIMARY};'>
-        <h2 style='color: {StyleConstants.ACCENT};'>📖 Nasıl Kullanılır?</h2>
-        <p>Bu araç, TikTok'taki Kaydedilenlerde bulunan koleksiyonlarınızdaki videoları toplu indirmenizi sağlar.</p>
-        <h3 style='color: {StyleConstants.ACCENT};'>Adım 1: Ayarlamalar</h3>
-        <p><b>Çerez Dosyası:</b> Tarayıcıya "Get cookies.txt LOCALLY" eklentisini kurun, TikTok'a giriş yapın, koleksiyon sayfasında eklenti simgesine tıklayın, "Export All Cookies" ile dosyayı indirin ve uygulamada seçin.</p>
-        <p><b>Hedef URL:</b> Koleksiyon sayfasının URL'sini kopyalayın ve uygulamaya yapıştırın.</p>
-        <h3 style='color: {StyleConstants.ACCENT};'>Adım 2: Linkleri Getir</h3>
-        <p>"📧 Linkleri Getir" butonuna basın. Uygulama tüm video linklerini alttaki kutuya listeleyecektir.</p>
-        <h3 style='color: {StyleConstants.ACCENT};'>Adım 3: İndir</h3>
-        <p>İndirme klasörünü seçin ve "⚡ İndir" butonuna basın. Tabloda ilerlemeyi izleyebilirsiniz.</p>
-        <h3 style='color: {StyleConstants.ACCENT};'>Sık Sorulan Sorular</h3>
-        <p><b>Çerez dosyasını nasıl güncellerim?</b> Adım 1'i tekrarlayın.</p>
-        <p><b>"Giriş hatası" alıyorum:</b> Çerez dosyanız geçersiz olabilir. Yeni bir tane indirin.</p>
-        <p><b>Neden bazı videolar indirilemedi?</b> "Hatalıları Göster" butonuna tıklayarak nedenleri görebilirsiniz.</p>
-        </body></html>
-        """
+        S = StyleConstants
         
         dialog = QDialog(self)
-        dialog.setWindowTitle("📖 Yardım ve Kullanım Kılavuzu")
-        dialog.setGeometry(150, 150, 650, 520)
-        dialog.setMinimumSize(600, 450)
-        
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(10)
-        
-        browser = QTextBrowser()
-        browser.setHtml(help_text)
-        browser.setOpenExternalLinks(True)
-        browser.setStyleSheet(f"""
-            QTextBrowser {{
-                background-color: {StyleConstants.BG_INPUT};
-                color: {StyleConstants.TEXT_PRIMARY};
-                border: 1px solid {StyleConstants.BORDER};
-                border-radius: 8px;
-                padding: 10px;
-            }}
+        dialog.setWindowTitle("Kullanım Rehberi")
+        dialog.setMinimumSize(580, 520)
+        dialog.resize(620, 580)
+        dialog.setStyleSheet(f"""
+            QDialog {{ background-color: {S.BG_PRIMARY}; }}
+            QLabel {{ background: transparent; border: none; }}
+            QFrame {{ border: none; }}
         """)
-        layout.addWidget(browser)
         
-        close_btn = QPushButton("✖️  Kapat")
-        close_btn.setFixedHeight(36)
+        main_layout = QVBoxLayout(dialog)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # Scroll Area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(f"QScrollArea {{ border: none; background: {S.BG_PRIMARY}; }}")
+        
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(20)
+        
+        # --- Başlık ---
+        title = QLabel("Nasıl Kullanılır?")
+        title.setFont(QFont(S.FONT_FAMILY, 18, QFont.Weight.Bold))
+        title.setStyleSheet(f"color: {S.ACCENT};")
+        layout.addWidget(title)
+        
+        subtitle = QLabel("TikTok koleksiyonlarınızdaki videoları 3 adımda indirin.")
+        subtitle.setFont(QFont(S.FONT_FAMILY, 11))
+        subtitle.setStyleSheet(f"color: {S.TEXT_SECONDARY};")
+        subtitle.setWordWrap(True)
+        layout.addWidget(subtitle)
+        
+        # --- Adım kartları ---
+        def make_step_card(number, title_text, steps_list):
+            card = QFrame()
+            card.setStyleSheet(f"""
+                QFrame {{ background-color: {S.BG_SURFACE}; border-radius: {S.BORDER_RADIUS}px; }}
+            """)
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(18, 14, 18, 14)
+            card_layout.setSpacing(8)
+            
+            # Adım başlığı
+            header = QHBoxLayout()
+            badge = QLabel(f"  {number}  ")
+            badge.setFixedSize(28, 28)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setFont(QFont(S.FONT_FAMILY, 11, QFont.Weight.Bold))
+            badge.setStyleSheet(f"""
+                background-color: {S.ACCENT}; color: white; border-radius: 14px;
+            """)
+            header.addWidget(badge)
+            
+            step_title = QLabel(title_text)
+            step_title.setFont(QFont(S.FONT_FAMILY, 13, QFont.Weight.Bold))
+            step_title.setStyleSheet(f"color: {S.TEXT_PRIMARY}; margin-left: 4px;")
+            header.addWidget(step_title)
+            header.addStretch()
+            card_layout.addLayout(header)
+            
+            # Adım açıklamaları
+            for step in steps_list:
+                step_label = QLabel(f"  {step}")
+                step_label.setFont(QFont(S.FONT_FAMILY, 10))
+                step_label.setStyleSheet(f"color: {S.TEXT_SECONDARY}; padding-left: 4px;")
+                step_label.setWordWrap(True)
+                card_layout.addWidget(step_label)
+            
+            return card
+        
+        card1 = make_step_card("1", "Çerez Dosyası Hazırlayın", [
+            "Chrome/Edge'e 'Get cookies.txt LOCALLY' eklentisini kurun",
+            "TikTok.com'a giriş yapıp koleksiyon sayfasına gidin",
+            "Eklenti simgesine tıklayın → Export All Cookies",
+            "İndirilen .txt dosyasını uygulamada 📂 Seç ile seçin",
+            "Hedef URL alanına koleksiyon linkini yapıştırın"
+        ])
+        layout.addWidget(card1)
+        
+        card2 = make_step_card("2", "Linkleri Getirin", [
+            "🎯 Bağlantıları Getir butonuna tıklayın",
+            "Uygulama tüm video linklerini otomatik bulacaktır",
+            "Linkler metin kutusuna listelenecektir"
+        ])
+        layout.addWidget(card2)
+        
+        card3 = make_step_card("3", "İndirin", [
+            "📁 Gözat ile indirme klasörünü seçin",
+            "⚡ İndirmeyi Başlat butonuna tıklayın",
+            "İlerlemeyi tablodaki durum çubuklarından takip edin",
+            "Daha önce indirilen videolar otomatik atlanır"
+        ])
+        layout.addWidget(card3)
+        
+        # --- SSS ---
+        faq_title = QLabel("Sık Sorulan Sorular")
+        faq_title.setFont(QFont(S.FONT_FAMILY, 14, QFont.Weight.Bold))
+        faq_title.setStyleSheet(f"color: {S.ACCENT}; margin-top: 4px;")
+        layout.addWidget(faq_title)
+        
+        def make_faq(question, answer):
+            faq = QFrame()
+            faq.setStyleSheet(f"QFrame {{ background-color: {S.BG_SURFACE}; border-radius: {S.BORDER_RADIUS}px; }}")
+            faq_layout = QVBoxLayout(faq)
+            faq_layout.setContentsMargins(16, 12, 16, 12)
+            faq_layout.setSpacing(4)
+            q = QLabel(question)
+            q.setFont(QFont(S.FONT_FAMILY, 11, QFont.Weight.Bold))
+            q.setStyleSheet(f"color: {S.TEXT_PRIMARY};")
+            q.setWordWrap(True)
+            faq_layout.addWidget(q)
+            a = QLabel(answer)
+            a.setFont(QFont(S.FONT_FAMILY, 10))
+            a.setStyleSheet(f"color: {S.TEXT_SECONDARY};")
+            a.setWordWrap(True)
+            faq_layout.addWidget(a)
+            return faq
+        
+        layout.addWidget(make_faq(
+            "Çerez dosyam neden çalışmıyor?",
+            "Çerezlerin süresi dolmuş olabilir. TikTok'a tekrar giriş yapıp yeni bir çerez dosyası indirin."
+        ))
+        layout.addWidget(make_faq(
+            "Bazı videolar neden indirilemedi?",
+            "Video silinmiş, gizlenmiş veya bölgenizde engellenmiş olabilir. İndirme sonunda 'Hataları Gör' butonuyla detaylara bakabilirsiniz."
+        ))
+        layout.addWidget(make_faq(
+            "Aynı koleksiyonu tekrar indirirsem ne olur?",
+            "Uygulama daha önce indirilen videoları otomatik olarak algılar ve atlar. Sadece yeni eklenen videolar indirilir."
+        ))
+        
+        layout.addStretch()
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll, 1)
+        
+        # Alt buton çubuğu
+        bottom_bar = QFrame()
+        bottom_bar.setFixedHeight(56)
+        bottom_bar.setStyleSheet(f"QFrame {{ background-color: {S.BG_SURFACE}; border-top: 1px solid {S.BORDER}; }}")
+        bottom_layout = QHBoxLayout(bottom_bar)
+        bottom_layout.setContentsMargins(20, 0, 20, 0)
+        
+        ver_label = QLabel(f"v{self.get_app_version()}")
+        ver_label.setFont(QFont(S.FONT_FAMILY, 10))
+        ver_label.setStyleSheet(f"color: {S.TEXT_MUTED};")
+        bottom_layout.addWidget(ver_label)
+        
+        bottom_layout.addStretch()
+        
+        close_btn = QPushButton("Kapat")
+        close_btn.setFixedSize(90, 34)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{ background-color: {S.ACCENT}; color: white; border: none;
+            border-radius: {S.BORDER_RADIUS}px; font-weight: bold; font-size: 12px; }}
+            QPushButton:hover {{ background-color: {S.ACCENT_HOVER}; }}
+        """)
         close_btn.clicked.connect(dialog.close)
-        layout.addWidget(close_btn)
+        bottom_layout.addWidget(close_btn)
         
-        dialog.setStyleSheet(StyleConstants.get_stylesheet())
+        main_layout.addWidget(bottom_bar)
         dialog.exec()
 
     # --- YARDIM PENCERESİ SONU ---
@@ -1659,7 +1779,7 @@ Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyConti
         except ZeroDivisionError: self.total_progress_bar.setValue(0)
         except Exception as e: print(f"DEBUG: total_progress_bar güncelleme hatası: {e}")
 
-    def on_all_finished(self, completed, skipped, errors, failed_list): # Parametreye failed_list eklendi
+    def on_all_finished(self, completed, skipped, errors, failed_list):
         self.set_gui_state("idle")
         self.download_button.setText('⚡ İndirmeyi Başlat')
         self.total_progress_bar.setValue(100)
@@ -1669,76 +1789,118 @@ Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyConti
         minutes = int(elapsed // 60)
         seconds = int(elapsed % 60)
         elapsed_str = f"{minutes}dk {seconds}sn" if minutes > 0 else f"{seconds}sn"
+        total = completed + skipped + errors
         
-        message = f"""
-        <div style='text-align: center;'>
-        <h3 style='margin-bottom: 8px;'>✓ İndirme İşlemi Tamamlandı</h3>
-        <hr style='border: 1px solid {StyleConstants.BORDER};'>
-        <p style='font-size: 13px; line-height: 1.8;'>
-        Başarılı: <b style='color:#1abc9c;'>{completed}</b><br>
-        Atlanan: <b style='color:#f39c12;'>{skipped}</b><br>
-        Hatalı: <b style='color:#e74c3c;'>{errors}</b><br><br>
-        Toplam İşlenen: <b>{completed + skipped + errors}</b><br>
-        Süre: <b style='color:#89b4fa;'>{elapsed_str}</b>
-        </p>
-        </div>
-        """
-        
-        msgBox = QMessageBox(self)
-        msgBox.setWindowTitle("İşlem Tamamlandı")
-        msgBox.setTextFormat(Qt.TextFormat.RichText)
-        msgBox.setText(message)
-        
-        # Stil
-        msgBox.setStyleSheet(f"""
-            QMessageBox {{ background-color: {StyleConstants.BG_PRIMARY}; }}
-            QLabel {{ color: {StyleConstants.TEXT_PRIMARY}; font-size: 13px; background: transparent; }}
-            QPushButton {{
-                background-color: {StyleConstants.BG_INPUT}; color: {StyleConstants.TEXT_PRIMARY};
-                padding: 8px 18px; border: 1px solid {StyleConstants.BORDER};
-                border-radius: {StyleConstants.BORDER_RADIUS}px; font-weight: bold;
-                min-width: 110px; min-height: 34px; font-size: 12px;
-            }}
-            QPushButton:hover {{ background-color: {StyleConstants.BORDER}; }}
+        # --- Minimalist Tamamlanma Dialogu (QDialog) ---
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Tamamlandı")
+        dialog.setFixedSize(340, 300)
+        dialog.setStyleSheet(f"""
+            QDialog {{ background-color: {StyleConstants.BG_PRIMARY}; }}
+            QLabel {{ background: transparent; border: none; }}
         """)
         
-        # İkon kullanılmıyor - temiz ve ortalanmış görünüm için
-        msgBox.setIcon(QMessageBox.Icon.NoIcon)
-
-        # Eğer hata varsa "Hatalıları Göster" butonunu ekle
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(30, 25, 30, 20)
+        layout.setSpacing(0)
+        
+        # Başarı ikonu + başlık
+        header = QLabel("✓  Tamamlandı")
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setFont(QFont(StyleConstants.FONT_FAMILY, 16, QFont.Weight.Bold))
+        header.setStyleSheet(f"color: {StyleConstants.SUCCESS}; margin-bottom: 16px;")
+        layout.addWidget(header)
+        
+        # İstatistik satırları
+        stats_widget = QWidget()
+        stats_widget.setStyleSheet(f"""
+            QWidget {{ background-color: {StyleConstants.BG_SURFACE}; border-radius: {StyleConstants.BORDER_RADIUS}px; }}
+        """)
+        stats_layout = QVBoxLayout(stats_widget)
+        stats_layout.setContentsMargins(20, 16, 20, 16)
+        stats_layout.setSpacing(8)
+        
+        def add_stat_row(label_text, value, color):
+            row = QHBoxLayout()
+            lbl = QLabel(label_text)
+            lbl.setFont(QFont(StyleConstants.FONT_FAMILY, 11))
+            lbl.setStyleSheet(f"color: {StyleConstants.TEXT_SECONDARY};")
+            val = QLabel(str(value))
+            val.setFont(QFont(StyleConstants.FONT_FAMILY, 12, QFont.Weight.Bold))
+            val.setStyleSheet(f"color: {color};")
+            val.setAlignment(Qt.AlignmentFlag.AlignRight)
+            row.addWidget(lbl)
+            row.addWidget(val)
+            stats_layout.addLayout(row)
+        
+        add_stat_row("Başarılı", completed, StyleConstants.SUCCESS)
+        add_stat_row("Atlanan", skipped, StyleConstants.WARNING)
+        add_stat_row("Hatalı", errors, StyleConstants.ERROR)
+        
+        # Ayırıcı çizgi
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background-color: {StyleConstants.BORDER}; border: none;")
+        stats_layout.addWidget(sep)
+        
+        add_stat_row("Toplam", total, StyleConstants.TEXT_PRIMARY)
+        add_stat_row("Süre", elapsed_str, StyleConstants.ACCENT)
+        
+        layout.addWidget(stats_widget)
+        layout.addSpacing(16)
+        
+        # Butonlar
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        
+        # Hatalıları Göster (sadece hata varsa)
         show_errors_btn = None
         if errors > 0:
-            show_errors_btn = msgBox.addButton("Hatalıları Göster", QMessageBox.ButtonRole.ActionRole)
+            show_errors_btn = QPushButton("Hataları Gör")
+            show_errors_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            show_errors_btn.setFixedHeight(36)
             show_errors_btn.setStyleSheet(f"""
-                QPushButton {{ background-color: {StyleConstants.ERROR}; color: white; font-weight: bold;
-                border: none; border-radius: {StyleConstants.BORDER_RADIUS}px; padding: 8px 18px; min-width: 130px; }}
-                QPushButton:hover {{ background-color: #e07090; }}
+                QPushButton {{ background-color: transparent; color: {StyleConstants.ERROR};
+                border: 1px solid {StyleConstants.ERROR}; border-radius: {StyleConstants.BORDER_RADIUS}px;
+                font-weight: bold; font-size: 11px; padding: 0 12px; }}
+                QPushButton:hover {{ background-color: {StyleConstants.ERROR}; color: white; }}
             """)
+            btn_layout.addWidget(show_errors_btn)
         
-        # Klasörü Aç butonu
-        open_folder_btn = msgBox.addButton("Klasörü Aç", QMessageBox.ButtonRole.ActionRole)
-        open_folder_btn.setStyleSheet(f"""
-            QPushButton {{ background-color: {StyleConstants.ACCENT}; color: white; font-weight: bold;
-            border: none; border-radius: {StyleConstants.BORDER_RADIUS}px; padding: 8px 18px; min-width: 110px; }}
-            QPushButton:hover {{ background-color: {StyleConstants.ACCENT_HOVER}; }}
-        """)
-
-        ok_btn = msgBox.addButton("Tamam", QMessageBox.ButtonRole.AcceptRole)
+        btn_layout.addStretch()
+        
+        ok_btn = QPushButton("Tamam")
+        ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        ok_btn.setFixedHeight(36)
         ok_btn.setStyleSheet(f"""
             QPushButton {{ background-color: {StyleConstants.BG_INPUT}; color: {StyleConstants.TEXT_PRIMARY};
             border: 1px solid {StyleConstants.BORDER}; border-radius: {StyleConstants.BORDER_RADIUS}px;
-            font-weight: bold; padding: 8px 18px; min-width: 90px; }}
+            font-weight: bold; font-size: 11px; padding: 0 16px; }}
             QPushButton:hover {{ background-color: {StyleConstants.BORDER}; }}
         """)
+        ok_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(ok_btn)
         
-        msgBox.exec()
-
-        # Butona basıldıysa ilgili aksiyonu gerçekleştir
-        if msgBox.clickedButton() == show_errors_btn:
-            error_dialog = ErrorDialog(failed_list, self)
-            error_dialog.exec()
-        elif msgBox.clickedButton() == open_folder_btn:
-            self.open_download_folder()
+        folder_btn = QPushButton("Klasörü Aç")
+        folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        folder_btn.setFixedHeight(36)
+        folder_btn.setStyleSheet(f"""
+            QPushButton {{ background-color: {StyleConstants.ACCENT}; color: white;
+            border: none; border-radius: {StyleConstants.BORDER_RADIUS}px;
+            font-weight: bold; font-size: 11px; padding: 0 16px; }}
+            QPushButton:hover {{ background-color: {StyleConstants.ACCENT_HOVER}; }}
+        """)
+        btn_layout.addWidget(folder_btn)
+        
+        layout.addLayout(btn_layout)
+        
+        # Buton bağlantıları
+        folder_btn.clicked.connect(lambda: (dialog.accept(), self.open_download_folder()))
+        if show_errors_btn:
+            show_errors_btn.clicked.connect(lambda: (dialog.accept(), ErrorDialog(failed_list, self).exec()))
+        
+        dialog.exec()
 
     def open_settings_dialog(self):
         """Ayarlar ve Hakkında penceresini aç."""

@@ -6,7 +6,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-1.8.6-blue?style=for-the-badge&logo=semver)](https://github.com/mehmettevfikcetin/TikTok-Bulk-Downloader/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.8.7-blue?style=for-the-badge&logo=semver)](https://github.com/mehmettevfikcetin/TikTok-Bulk-Downloader/releases/latest)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![PyQt6](https://img.shields.io/badge/PyQt6-GUI-41CD52?style=for-the-badge&logo=qt&logoColor=white)](https://www.riverbankcomputing.com/software/pyqt/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
