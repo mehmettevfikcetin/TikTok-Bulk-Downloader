@@ -1078,7 +1078,7 @@ class App(QWidget):
 
     # --- YARDIMCI STİL FONKSİYONLARI ---
     def get_app_version(self):
-        return "1.8.7" # Versiyonu buradan yönetelim
+        return "1.8.8" # Versiyonu buradan yönetelim
 
     def get_frame_style(self):
         S = StyleConstants
@@ -1436,7 +1436,7 @@ class App(QWidget):
                 QMessageBox.warning(self, "⚠️ Hata", f"Güncelleme kontrolü yapılamadı:\n{e}")
 
     def perform_auto_update(self, url):
-        """Yeni sürümü indirir ve eskiyle değiştirir (v3 - PowerShell tabanlı, tam sağlam)."""
+        """Yeni sürümü indirir ve eskiyle değiştirir (v4 - Agresif kill, self-cleanup)."""
         try:
             self.download_button.setText("📥 Güncelleme İndiriliyor...")
             self.download_button.setEnabled(False)
@@ -1450,26 +1450,20 @@ class App(QWidget):
             else:
                 current_exe = os.path.abspath(sys.argv[0])
             
-            # Eğer Python script ile çalışıyorsa güncelleme yapma
             if not current_exe.endswith(".exe"):
                 QMessageBox.warning(self, "⚠️ Uyarı", "Bu özellik sadece .exe formatında çalışır.")
                 self._reset_update_buttons()
                 return
 
-            # EXE'nin bulunduğu dizin (TÜM dosya işlemleri bu dizinde yapılacak)
             exe_dir = os.path.dirname(current_exe)
-            
-            # Yeni dosya için MUTLAK yol (exe ile aynı dizinde)
+            exe_name_no_ext = os.path.splitext(os.path.basename(current_exe))[0]
             new_exe_path = os.path.join(exe_dir, "tiktok_update_new.exe")
             
             print(f"📦 Mevcut exe: {current_exe}")
             print(f"📁 Exe dizini: {exe_dir}")
-            print(f"📥 Yeni exe hedefi: {new_exe_path}")
             
-            # 1. Yeni sürümü exe'nin dizinine indir (MUTLAK YOL ile)
-            print("📥 Yeni sürüm indiriliyor...")
+            # 1. Yeni sürümü indir
             response = requests.get(url, stream=True, timeout=300)
-            
             if response.status_code != 200:
                 raise Exception(f"İndirme hatası: HTTP {response.status_code}")
             
@@ -1486,12 +1480,11 @@ class App(QWidget):
                             self.download_button.setText(f"📥 İndiriliyor: {percent:.0f}%")
                             QCoreApplication.processEvents()
             
-            # İndirilen dosya doğrulama
             if not os.path.exists(new_exe_path):
                 raise Exception(f"İndirilen dosya bulunamadı: {new_exe_path}")
             
             new_size = os.path.getsize(new_exe_path)
-            if new_size < 50000:  # 50KB'dan küçükse bozuk
+            if new_size < 50000:
                 os.remove(new_exe_path)
                 raise Exception(f"İndirilen dosya çok küçük ({new_size} bytes), bozuk olabilir!")
             
@@ -1499,97 +1492,114 @@ class App(QWidget):
             self.download_button.setText("🔧 Güncelleme hazırlanıyor...")
             QCoreApplication.processEvents()
             
-            # 2. PowerShell scripti oluştur (BAT yerine - Unicode ve boşluklu yolları doğal destekler)
+            # 2. PowerShell update scripti
             pid = os.getpid()
             ps_script_path = os.path.join(exe_dir, "updater.ps1")
             
-            # PowerShell script - tüm yollar tek tırnak içinde, escape gerekmez
-            ps_script = f"""# TikTok Indirici - Otomatik Guncelleyici
-$ErrorActionPreference = 'Stop'
+            ps_script = f"""# TikTok Indirici - Otomatik Guncelleyici v4
+$ErrorActionPreference = 'SilentlyContinue'
 $oldExe = '{current_exe}'
 $newExe = '{new_exe_path}'
-$pid = {pid}
+$targetPid = {pid}
+$exeProcessName = '{exe_name_no_ext}'
+$scriptPath = $MyInvocation.MyCommand.Path
 
-Write-Host '========================================' -ForegroundColor Green
-Write-Host '  TikTok Indirici Guncelleniyor...' -ForegroundColor Green
-Write-Host '========================================' -ForegroundColor Green
+Write-Host ''
+Write-Host '  Guncelleme baslatildi...' -ForegroundColor Cyan
 Write-Host ''
 
-# 1. Uygulamanin kapanmasini bekle (max 30 saniye)
-Write-Host 'Uygulama kapatiliyor...' -ForegroundColor Yellow
-$waited = 0
-while ($waited -lt 30) {{
-    try {{
-        $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
-        if (-not $proc) {{ break }}
-        Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
-    }} catch {{ }}
+# === ADIM 1: Uygulamayi tamamen kapat ===
+# Once PID ile, sonra isimle - tum prosesleri oldir
+Write-Host '  [1/4] Uygulama kapatiliyor...' -ForegroundColor Yellow
+
+# PID ile oldir
+try {{ Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue }} catch {{}}
+
+# Isim ile oldir (PyInstaller bootloader dahil)
+Start-Sleep -Milliseconds 500
+Get-Process -Name $exeProcessName -ErrorAction SilentlyContinue | ForEach-Object {{
+    try {{ $_ | Stop-Process -Force }} catch {{}}
+}}
+
+# Dosya kilidinin acilmasini bekle (max 20 saniye)
+$unlocked = $false
+for ($i = 0; $i -lt 20; $i++) {{
     Start-Sleep -Seconds 1
-    $waited++
-}}
-Start-Sleep -Seconds 2
-
-# 2. Eski exe'yi sil (max 10 deneme)
-Write-Host 'Eski surum kaldiriliyor...' -ForegroundColor Yellow
-$retry = 0
-while ((Test-Path $oldExe) -and ($retry -lt 10)) {{
     try {{
-        Remove-Item -Path $oldExe -Force -ErrorAction Stop
-        Write-Host 'Eski surum silindi.' -ForegroundColor Green
+        if (Test-Path $oldExe) {{
+            $stream = [System.IO.File]::Open($oldExe, 'Open', 'ReadWrite', 'None')
+            $stream.Close()
+            $stream.Dispose()
+            $unlocked = $true
+            break
+        }} else {{
+            $unlocked = $true
+            break
+        }}
     }} catch {{
-        Write-Host "Deneme $($retry+1)/10 - Dosya henuz kilitli, bekleniyor..." -ForegroundColor DarkYellow
-        Start-Sleep -Seconds 2
+        Write-Host "    Dosya kilitli, bekleniyor... ($($i+1)/20)" -ForegroundColor DarkGray
     }}
-    $retry++
 }}
 
-if (Test-Path $oldExe) {{
-    Write-Host 'HATA: Eski dosya silinemedi!' -ForegroundColor Red
-    Write-Host 'Lutfen uygulamayi manuel kapatin ve tekrar deneyin.' -ForegroundColor Red
-    Read-Host 'Kapatmak icin Enter tuslayın'
+if (-not $unlocked) {{
+    Write-Host '  HATA: Dosya kilidi acilamadi!' -ForegroundColor Red
+    Write-Host '  Lutfen uygulamayi manuel kapatin.' -ForegroundColor Red
+    Start-Sleep -Seconds 5
+    # Temizlik: scriptini sil
+    Start-Process cmd -ArgumentList "/c timeout /t 2 /nobreak >NUL & del `"$scriptPath`"" -WindowStyle Hidden
     exit 1
 }}
 
-# 3. Yeni exe'yi eski isimle tasi
-Write-Host 'Yeni surum hazirlaniyor...' -ForegroundColor Yellow
-try {{
-    Move-Item -Path $newExe -Destination $oldExe -Force
-    Write-Host 'Dosya tasindi.' -ForegroundColor Green
-}} catch {{
-    Write-Host "HATA: Dosya tasinamadi: $_" -ForegroundColor Red
-    # Fallback: Copy dene
-    try {{
-        Copy-Item -Path $newExe -Destination $oldExe -Force
-        Remove-Item -Path $newExe -Force -ErrorAction SilentlyContinue
-        Write-Host 'Dosya kopyalandi (fallback).' -ForegroundColor Green
-    }} catch {{
-        Write-Host "KRITIK HATA: Dosya kopyalanamadi: $_" -ForegroundColor Red
-        Read-Host 'Kapatmak icin Enter tuslayın'
-        exit 1
+# === ADIM 2: Eski exe'yi sil ===
+Write-Host '  [2/4] Eski surum kaldiriliyor...' -ForegroundColor Yellow
+if (Test-Path $oldExe) {{
+    Remove-Item -Path $oldExe -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
+    if (Test-Path $oldExe) {{
+        # Son care: rename et
+        $backupName = $oldExe + '.old'
+        Rename-Item -Path $oldExe -NewName $backupName -Force -ErrorAction SilentlyContinue
     }}
 }}
 
-# 4. Dogrulama
+# === ADIM 3: Yeni dosyayi tasi ===
+Write-Host '  [3/4] Yeni surum hazirlaniyor...' -ForegroundColor Yellow
 if (Test-Path $oldExe) {{
-    Write-Host '' -ForegroundColor Green
-    Write-Host '========================================' -ForegroundColor Green
-    Write-Host '  Guncelleme Basarili!' -ForegroundColor Green
-    Write-Host '========================================' -ForegroundColor Green
-    Write-Host 'Uygulama baslatiliyor...' -ForegroundColor Cyan
-    Start-Sleep -Seconds 1
-    Start-Process -FilePath $oldExe
+    # Eski hala varsa (rename edilmis bile olabilir), kopyala
+    Copy-Item -Path $newExe -Destination $oldExe -Force
+    Remove-Item -Path $newExe -Force -ErrorAction SilentlyContinue
 }} else {{
-    Write-Host 'HATA: Guncelleme dogrulanamadi!' -ForegroundColor Red
-    Read-Host 'Kapatmak icin Enter tuslayın'
-    exit 1
+    Move-Item -Path $newExe -Destination $oldExe -Force
 }}
 
-# 5. Temizlik - kendi scriptini sil
-Start-Sleep -Seconds 3
-Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+# Dogrulama
+if (-not (Test-Path $oldExe)) {{
+    # Son fallback: yeni exe'yi eski isimle kopyala
+    if (Test-Path $newExe) {{
+        Copy-Item -Path $newExe -Destination $oldExe -Force
+    }}
+}}
+
+# === ADIM 4: Yeni surumu baslat + temizlik ===
+if (Test-Path $oldExe) {{
+    Write-Host ''
+    Write-Host '  Guncelleme basarili!' -ForegroundColor Green
+    Write-Host '  Yeni surum baslatiliyor...' -ForegroundColor Cyan
+    Write-Host ''
+    
+    Start-Sleep -Milliseconds 500
+    Start-Process -FilePath $oldExe
+    
+    # .old backup dosyasini ve scriptini temizle (cmd ile - ps1 kendini silemez)
+    $oldBackup = $oldExe + '.old'
+    Start-Process cmd -ArgumentList "/c timeout /t 3 /nobreak >NUL & del /F /Q `"$oldBackup`" >NUL 2>&1 & del /F /Q `"$newExe`" >NUL 2>&1 & del /F /Q `"$scriptPath`" >NUL 2>&1" -WindowStyle Hidden
+}} else {{
+    Write-Host '  HATA: Guncelleme dogrulanamadi!' -ForegroundColor Red
+    Start-Sleep -Seconds 5
+    Start-Process cmd -ArgumentList "/c timeout /t 2 /nobreak >NUL & del `"$scriptPath`"" -WindowStyle Hidden
+}}
 """
             
-            # Script dosyasını yaz (UTF-8 BOM ile - PowerShell bunu doğru okur)
             with open(ps_script_path, "w", encoding='utf-8-sig') as f:
                 f.write(ps_script)
             
@@ -1597,9 +1607,6 @@ Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyConti
             self.download_button.setText("🚀 Güncelleme Başlatılıyor...")
             QCoreApplication.processEvents()
             
-            # PowerShell scripti AYRI BİR PENCEREDE başlat
-            # -ExecutionPolicy Bypass: Script imza kısıtlamasını aş
-            # -File: Script dosyasını çalıştır
             subprocess.Popen(
                 [
                     'powershell.exe',
@@ -1611,13 +1618,11 @@ Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyConti
                 creationflags=subprocess.CREATE_NEW_CONSOLE
             )
             
-            # Hemen çıkış yap ki dosya kilidi kalksın
             print("⏹️ Uygulama kapanıyor...")
-            os._exit(0)  # os._exit kullan - PyInstaller cleanup'ı atla, anında çık
+            os._exit(0)
             
         except Exception as e:
             print(f"❌ Güncelleme hatası: {e}")
-            # Hata durumunda fallback: tarayıcıda indirme sayfasını aç
             error_msg = f"Otomatik güncelleme yapılamadı:\n{e}\n\nTarayıcıda indirme sayfası açılsın mı?"
             reply = QMessageBox.question(
                 self, "Güncelleme Hatası", error_msg,
@@ -1626,7 +1631,6 @@ Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyConti
             if reply == QMessageBox.StandardButton.Yes:
                 QDesktopServices.openUrl(QUrl("https://github.com/mehmettevfikcetin/TikTok-Bulk-Downloader/releases/latest"))
             
-            # İndirilen geçici dosyayı temizle
             try:
                 if 'new_exe_path' in locals() and os.path.exists(new_exe_path):
                     os.remove(new_exe_path)
