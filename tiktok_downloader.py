@@ -493,8 +493,8 @@ class DownloaderThread(QThread):
                     '--no-warnings',
                     '--ignore-errors',
                     '--newline',  # İlerleme çubuğu için gerekli
-                    # --- SES/GÖRÜNTÜ SENKRONİZASYONU ---
-                    '--format', 'b[ext=mp4]/bv*+ba/b',       # Önce hazır mp4, yoksa birleştir
+                    # --- EN YÜKSEK KALİTE ÖNCELİKLİ İNDİRME ---
+                    '--format', 'bv*+ba/b[ext=mp4]/b',        # Önce en yüksek kalite video+ses, yoksa hazır mp4, son çare ne varsa
                     '--merge-output-format', 'mp4',            # Çıktı her zaman mp4 olsun
                     '--ffmpeg-location', FFMPEG_DIR,            # FFmpeg konumunu göster
                     '--fixup', 'force',                        # Bozuk zaman damgalarını onar
@@ -1078,7 +1078,7 @@ class App(QWidget):
 
     # --- YARDIMCI STİL FONKSİYONLARI ---
     def get_app_version(self):
-        return "1.8.8" # Versiyonu buradan yönetelim
+        return "1.8.9" # Versiyonu buradan yönetelim
 
     def get_frame_style(self):
         S = StyleConstants
