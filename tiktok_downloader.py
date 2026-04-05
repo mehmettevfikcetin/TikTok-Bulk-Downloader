@@ -41,6 +41,46 @@ except Exception: pass
 # Ortak User-Agent (Çerezlerle uyumlu güncel masaüstü kimliği)
 COMMON_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
+# TikTok için özel extractor ayarları (API değişikliklerine karşı)
+# Not: TikTok sürekli API değiştirdiği için yt-dlp'nin güncel olması çok önemlidir.
+# Çerez dosyası kullanmak da indirme başarısını önemli ölçüde artırır.
+TIKTOK_EXTRACTOR_ARGS = 'tiktok:api_hostname=api22-normal-c-useast2a.tiktokv.com'
+
+# İndirme tekrar deneme ayarları
+MAX_DOWNLOAD_RETRIES = 2
+RETRY_DELAY_SECONDS = 3
+
+# yt-dlp minimum önerilen sürüm (YYYY.MM.DD formatında)
+# Bu sürümün altındaki yt-dlp TikTok ile sorun yaşayabilir
+YT_DLP_MIN_RECOMMENDED_VERSION = "2024.01.01"
+
+
+def check_ytdlp_version():
+    """yt-dlp sürümünü kontrol eder ve uyarı döndürür."""
+    try:
+        result = subprocess.run(
+            [YT_DLP_PATH, '--version'],
+            capture_output=True, text=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        )
+        if result.returncode == 0:
+            version = result.stdout.strip()
+            # Sürüm karşılaştırması (YYYY.MM.DD formatı)
+            try:
+                if version < YT_DLP_MIN_RECOMMENDED_VERSION:
+                    return {
+                        'version': version,
+                        'warning': f"yt-dlp sürümünüz ({version}) eski olabilir. TikTok indirme sorunları yaşıyorsanız yt-dlp'yi güncelleyin.\nÖnerilen minimum: {YT_DLP_MIN_RECOMMENDED_VERSION}\nGüncelleme: https://github.com/yt-dlp/yt-dlp/releases"
+                    }
+            except Exception:
+                pass
+            return {'version': version, 'warning': None}
+        return {'version': 'Bilinmiyor', 'warning': "yt-dlp sürümü okunamadı."}
+    except FileNotFoundError:
+        return {'version': 'Bulunamadı', 'warning': "yt-dlp.exe bulunamadı. Lütfen aynı klasöre koyun."}
+    except Exception as e:
+        return {'version': 'Hata', 'warning': f"yt-dlp sürüm kontrolü sırasında hata: {str(e)}"}
+
 # --- STİL KONSTANTLARı (Modern Pro Paleti) ---
 class StyleConstants:
     # Modern Pro Renk Paleti (Catppuccin Mocha bazlı)
@@ -372,6 +412,9 @@ class LinkFetcherThread(QThread):
             self.fetchStatus.emit(f"yt-dlp ile {self.target_url} adresinden linkler derinlemesine taranıyor (Mobil Modu)...")
             
             # --- LinkFetcherThread GÜNCELLEMESİ ---
+            # TikTok URL'leri için özel extractor ayarları kullan
+            is_tiktok = 'tiktok.com' in self.target_url.lower() or 'vm.tiktok' in self.target_url.lower()
+            
             command = [
                 YT_DLP_PATH,
                 '--cookies', self.cookies_path,
@@ -390,8 +433,13 @@ class LinkFetcherThread(QThread):
                 # MASAÜSTÜ KİMLİĞİ (Çerezlerle eşleşmesi için)
                 '--user-agent', COMMON_USER_AGENT,
                 '--referer', 'https://www.tiktok.com/',
-                self.target_url
             ]
+            
+            # TikTok için özel API ayarları ekle (extraction hatalarını önlemek için)
+            if is_tiktok:
+                command.extend(['--extractor-args', TIKTOK_EXTRACTOR_ARGS])
+            
+            command.append(self.target_url)
 
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                        text=True, encoding='utf-8', errors='ignore',
@@ -480,82 +528,124 @@ class DownloaderThread(QThread):
                 time.sleep(0.05)
                 continue
 
-            # 2. İNDİRME (subprocess ile yt-dlp.exe çağırarak)
-            try:
-                # Dosya adı formatı: Baslik_ID.mp4
-                output_template = os.path.join(self.target_dir, "%(title).30s_%(id)s.%(ext)s")
+            # 2. İNDİRME (subprocess ile yt-dlp.exe çağırarak) - TEKRAR DENEME DESTEKLİ
+            download_success = False
+            last_error = "Bilinmeyen Hata"
+            
+            # TikTok URL'si mi kontrol et
+            is_tiktok = 'tiktok.com' in url.lower() or 'vm.tiktok' in url.lower()
+            
+            for retry_attempt in range(MAX_DOWNLOAD_RETRIES + 1):
+                if not self.running: break
                 
-                command = [
-                    YT_DLP_PATH,
-                    '--cookies', self.cookies_path,
-                    '--output', output_template,
-                    '--no-overwrites',
-                    '--no-warnings',
-                    '--ignore-errors',
-                    '--newline',  # İlerleme çubuğu için gerekli
-                    # --- EN YÜKSEK KALİTE ÖNCELİKLİ İNDİRME ---
-                    '--format', 'bv*+ba/b[ext=mp4]/b',        # Önce en yüksek kalite video+ses, yoksa hazır mp4, son çare ne varsa
-                    '--merge-output-format', 'mp4',            # Çıktı her zaman mp4 olsun
-                    '--ffmpeg-location', FFMPEG_DIR,            # FFmpeg konumunu göster
-                    '--fixup', 'force',                        # Bozuk zaman damgalarını onar
-                    '--postprocessor-args', 'ffmpeg:-avoid_negative_ts make_zero',  # Negatif zaman damgası düzelt
-                    # --- KARARLILIK / HATA YÖNETİMİ ---
-                    '--retries', '5',
-                    '--fragment-retries', '5',
-                    '--extractor-retries', '3',
-                    '--socket-timeout', '30',
-                    '--no-cache-dir',
-                    # --- MASAÜSTÜ KİMLİĞİ ---
-                    '--user-agent', COMMON_USER_AGENT,
-                    '--referer', 'https://www.tiktok.com/',
-                    url
-                ]
+                try:
+                    # Dosya adı formatı: Baslik_ID.mp4
+                    output_template = os.path.join(self.target_dir, "%(title).30s_%(id)s.%(ext)s")
+                    
+                    command = [
+                        YT_DLP_PATH,
+                        '--cookies', self.cookies_path,
+                        '--output', output_template,
+                        '--no-overwrites',
+                        '--no-warnings',
+                        '--ignore-errors',
+                        '--newline',  # İlerleme çubuğu için gerekli
+                        # --- EN YÜKSEK KALİTE ÖNCELİKLİ İNDİRME ---
+                        '--format', 'bv*+ba/b[ext=mp4]/b',        # Önce en yüksek kalite video+ses, yoksa hazır mp4, son çare ne varsa
+                        '--merge-output-format', 'mp4',            # Çıktı her zaman mp4 olsun
+                        '--ffmpeg-location', FFMPEG_DIR,            # FFmpeg konumunu göster
+                        '--fixup', 'force',                        # Bozuk zaman damgalarını onar
+                        '--postprocessor-args', 'ffmpeg:-avoid_negative_ts make_zero',  # Negatif zaman damgası düzelt
+                        # --- KARARLILIK / HATA YÖNETİMİ ---
+                        '--retries', '5',
+                        '--fragment-retries', '5',
+                        '--extractor-retries', '3',
+                        '--socket-timeout', '30',
+                        '--no-cache-dir',
+                        # --- MASAÜSTÜ KİMLİĞİ ---
+                        '--user-agent', COMMON_USER_AGENT,
+                        '--referer', 'https://www.tiktok.com/',
+                    ]
+                    
+                    # TikTok için özel API ayarları ekle (extraction hatalarını önlemek için)
+                    if is_tiktok:
+                        command.extend(['--extractor-args', TIKTOK_EXTRACTOR_ARGS])
+                    
+                    command.append(url)
 
-                process = subprocess.Popen(
-                    command,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    encoding='utf-8',
-                    errors='ignore',
-                    creationflags=subprocess.CREATE_NO_WINDOW
-                )
+                    process = subprocess.Popen(
+                        command,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        encoding='utf-8',
+                        errors='ignore',
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
 
-                status_message = "İndiriliyor..."
-                
-                # Çıktıyı satır satır oku (İlerleme çubuğu için)
-                while True:
-                    line = process.stdout.readline()
-                    if not line and process.poll() is not None:
-                        break
-                    if line:
-                        # yt-dlp çıktısından yüzdeyi yakala: "[download]  45.0% of 10.00MiB..."
-                        if "[download]" in line and "%" in line:
-                            try:
-                                parts = line.split()
-                                for part in parts:
-                                    if "%" in part:
-                                        percent = float(part.replace("%", ""))
-                                        self.progressUpdated.emit(i, int(percent))
-                                        break
-                            except: pass
+                    status_message = "İndiriliyor..."
+                    
+                    # Çıktıyı satır satır oku (İlerleme çubuğu için)
+                    while True:
+                        line = process.stdout.readline()
+                        if not line and process.poll() is not None:
+                            break
+                        if line:
+                            # yt-dlp çıktısından yüzdeyi yakala: "[download]  45.0% of 10.00MiB..."
+                            if "[download]" in line and "%" in line:
+                                try:
+                                    parts = line.split()
+                                    for part in parts:
+                                        if "%" in part:
+                                            percent = float(part.replace("%", ""))
+                                            self.progressUpdated.emit(i, int(percent))
+                                            break
+                                except: pass
 
-                if process.returncode == 0:
-                    self.stats['completed'] += 1
-                    self.videoFinished.emit(i, video_id, "TAMAMLANDI")
-                    self.progressUpdated.emit(i, 100)
-                else:
-                    # Hata varsa stderr oku
-                    err_out = process.stderr.read()
-                    self.stats['errors'] += 1
-                    clean_err = err_out.strip() or "Bilinmeyen Hata"
-                    self.failed_list.append({'url': url, 'error': clean_err})
-                    self.videoFinished.emit(i, video_id, "HATA")
+                    if process.returncode == 0:
+                        download_success = True
+                        self.stats['completed'] += 1
+                        self.videoFinished.emit(i, video_id, "TAMAMLANDI")
+                        self.progressUpdated.emit(i, 100)
+                        break  # Başarılı, döngüden çık
+                    else:
+                        # Hata varsa stderr oku
+                        err_out = process.stderr.read()
+                        last_error = err_out.strip() or "Bilinmeyen Hata"
+                        
+                        # Belirli hatalar için özel mesaj ve tekrar deneme
+                        is_extraction_error = "unable to extract" in last_error.lower() or "webpage video data" in last_error.lower()
+                        
+                        if is_extraction_error and retry_attempt < MAX_DOWNLOAD_RETRIES:
+                            # Extraction hatası - tekrar dene
+                            print(f"DEBUG: Video {video_id} extraction hatası, {retry_attempt + 1}/{MAX_DOWNLOAD_RETRIES + 1} deneme...")
+                            time.sleep(RETRY_DELAY_SECONDS)
+                            continue
+                        
+                        # Son deneme veya farklı hata türü
+                        if is_extraction_error:
+                            # Kullanıcı dostu hata mesajı ekle
+                            last_error = (
+                                "TikTok video verisi çıkarılamadı. Bu genellikle yt-dlp'nin eski olmasından "
+                                "veya çerez dosyasının geçersiz/eksik olmasından kaynaklanır.\n"
+                                "Çözüm: 1) yt-dlp'yi güncelleyin (https://github.com/yt-dlp/yt-dlp/releases)\n"
+                                "       2) Tarayıcıdan yeni çerez dosyası alın\n"
+                                f"Orijinal hata: {last_error[:200]}"
+                            )
+                        break  # Başarısız ve tekrar denemeyecek
 
-            except Exception as e:
+                except Exception as e:
+                    last_error = str(e)
+                    if retry_attempt < MAX_DOWNLOAD_RETRIES:
+                        time.sleep(RETRY_DELAY_SECONDS)
+                        continue
+                    break
+            
+            # İndirme başarısız olduysa kaydet
+            if not download_success and self.running:
                 self.stats['errors'] += 1
-                self.failed_list.append({'url': url, 'error': str(e)})
-                self.videoFinished.emit(i, video_id, f"HATA: {str(e)[:20]}")
+                self.failed_list.append({'url': url, 'error': last_error})
+                self.videoFinished.emit(i, video_id, "HATA")
 
             # TikTok'un engellememesi için bekleme süresi
             if self.running: time.sleep(2)
@@ -1074,11 +1164,32 @@ class App(QWidget):
         # --- GÜNCELLEME KONTROLÜNÜ BAŞLAT ---
         # Uygulama açıldıktan 2 saniye sonra kontrol et
         QTimer.singleShot(2000, self.check_for_updates)
+        
+        # --- YT-DLP SÜRÜM KONTROLÜ ---
+        # Uygulama açıldıktan 3 saniye sonra yt-dlp sürümünü kontrol et
+        QTimer.singleShot(3000, self.check_ytdlp_version_warning)
     # --- initUI SONU ---
+
+    def check_ytdlp_version_warning(self):
+        """yt-dlp sürümünü kontrol eder ve gerekirse uyarı gösterir."""
+        result = check_ytdlp_version()
+        if result.get('warning'):
+            print(f"DEBUG: yt-dlp sürümü: {result.get('version')}")
+            print(f"DEBUG: yt-dlp uyarısı: {result.get('warning')}")
+            # Uyarıyı bir kez göster (ayarlarda kontrol)
+            last_warning_version = self.settings.value("ytdlp_last_warned_version", "")
+            current_version = result.get('version', '')
+            if last_warning_version != current_version:
+                QMessageBox.warning(
+                    self, 
+                    'yt-dlp Sürüm Uyarısı', 
+                    result['warning']
+                )
+                self.settings.setValue("ytdlp_last_warned_version", current_version)
 
     # --- YARDIMCI STİL FONKSİYONLARI ---
     def get_app_version(self):
-        return "1.8.9" # Versiyonu buradan yönetelim
+        return "1.9.0" # Versiyonu buradan yönetelim
 
     def get_frame_style(self):
         S = StyleConstants
